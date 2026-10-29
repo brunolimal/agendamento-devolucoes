@@ -1,14 +1,21 @@
 import type { Metadata } from "next";
+import type { CSSProperties } from "react";
+import { getConfig } from "@/lib/config";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "Agendamento de Devoluções",
-};
+// A marca vem do banco: nenhuma página é gerada estaticamente.
+export const dynamic = "force-dynamic";
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export async function generateMetadata(): Promise<Metadata> {
+  const { marca } = await getConfig();
+  return { title: marca.nome };
+}
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const { marca } = await getConfig();
   return (
     <html lang="pt-BR">
-      <body>{children}</body>
+      <body style={{ "--cor-primaria": marca.cor_primaria } as CSSProperties}>{children}</body>
     </html>
   );
 }

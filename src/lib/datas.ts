@@ -1,5 +1,5 @@
 import { TZDate } from "@date-fns/tz";
-import { addDays, format } from "date-fns";
+import { addDays, endOfMonth, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 export const FUSO = "America/Sao_Paulo";
@@ -53,4 +53,37 @@ export function instanteSP(data: string, hora = "12:00"): Date {
   const [ano, mes, dia] = data.split("-").map(Number);
   const [h, m] = hora.split(":").map(Number);
   return new Date(new TZDate(ano, mes - 1, dia, h, m, FUSO).getTime());
+}
+
+/** Dia da semana por extenso, ex.: "segunda-feira". */
+export function formatarDiaSemana(valor: Date | string): string {
+  return format(paraSP(valor), "EEEE", { locale: ptBR });
+}
+
+/** "08:00:00" -> "08:00". */
+export function formatarHora(hora: string): string {
+  return hora.slice(0, 5);
+}
+
+/** Primeiro e último dia de um mês "yyyy-MM". */
+export function limitesDoMes(mes: string): { de: string; ate: string } {
+  const de = `${mes}-01`;
+  return { de, ate: format(endOfMonth(paraSP(de)), "yyyy-MM-dd") };
+}
+
+/** Todas as datas de `de` até `ate` (inclusive). */
+export function listarDias(de: string, ate: string): string[] {
+  const dias: string[] = [];
+  for (let d = de; d <= ate; d = somarDias(d, 1)) dias.push(d);
+  return dias;
+}
+
+/** "yyyy-MM" a partir de uma data yyyy-MM-dd. */
+export function mesDe(data: string): string {
+  return data.slice(0, 7);
+}
+
+/** "2026-03" -> "março de 2026". */
+export function formatarMes(mes: string): string {
+  return format(paraSP(`${mes}-01`), "MMMM 'de' yyyy", { locale: ptBR });
 }

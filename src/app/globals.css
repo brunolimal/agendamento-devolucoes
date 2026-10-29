@@ -1,1 +1,14 @@
 @import "tailwindcss";
+
+:root {
+  --cor-primaria: #0f766e;
+}
+
+@theme inline {
+  --color-primaria: var(--cor-primaria);
+}
+
+body {
+  background: #f8fafc;
+  color: #0f172a;
+}
