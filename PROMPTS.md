@@ -43,7 +43,7 @@ Etapa 4: telas da SPEC §9 (/, /agendar com stepper de 4 passos, /agendar/protoc
 
 ## Etapa 5 — Painel: login, caixa de entrada e detalhe
 ```
-Etapa 5: auth (SPEC §14: middleware, cookie jose, exigirSessao, limite de tentativas), /painel/login, /painel (caixa de entrada com os 3 blocos, polling de 60s e contador no título), /painel/agendamentos (busca/filtro) e /painel/agendamentos/[id] com todas as ações da §10 (confirmar com modal obrigatório, recusar, reagendar com ocupação e opção forçar, cancelar, editar, concluir, não compareceu), histórico e transações via assert_vaga. Sem envio de mensagem ainda. Comece pelo plano.
+Etapa 5: auth (SPEC §14: proxy, cookie jose, exigirSessao, limite de tentativas), /painel/login, /painel (caixa de entrada com os 3 blocos, polling de 60s e contador no título), /painel/agendamentos (busca/filtro) e /painel/agendamentos/[id] com todas as ações da §10 (confirmar com modal obrigatório, recusar, reagendar com ocupação e opção forçar, cancelar, editar, concluir, não compareceu), histórico e transações via assert_vaga. Sem envio de mensagem ainda. Comece pelo plano.
 ```
 **Aceite:** todas as transições da §5 funcionam e as inválidas ficam bloqueadas; o histórico é gravado.
 

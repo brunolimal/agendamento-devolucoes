@@ -301,7 +301,7 @@ end $$;
 - Tempo mínimo de preenchimento de 5 s.
 - Máximo de 10 envios por IP por hora (`tentativas_publicas`, IP com hash SHA-256 + salt).
 
-## 10. Painel (`/painel/*`, protegido por middleware)
+## 10. Painel (`/painel/*`, protegido por proxy)
 
 | Rota | Função |
 |---|---|
@@ -454,10 +454,10 @@ Olá, {nome}! Recebemos o cancelamento da devolução {protocolo} de {data}. Qua
 
 ## 14. Segurança
 
-- `middleware.ts` protege `/painel/*`, exceto `/painel/login`.
+- `proxy.ts` (Next 16, antigo `middleware.ts`) protege `/painel/*`, exceto `/painel/login`.
 - Cookie `sessao`: httpOnly, secure, sameSite=lax, validade de 12 h, assinado com `SESSION_SECRET` (HS256).
 - Login: até 5 tentativas erradas por IP a cada 15 min.
-- Server Actions do painel revalidam a sessão no servidor (não confiar só no middleware).
+- Server Actions do painel revalidam a sessão no servidor (não confiar só no proxy).
 - Token do cliente: 32 caracteres aleatórios. A página `/a/[token]` não expõe telefone completo (mascarado) nem o id interno.
 - Nenhum segredo no repositório. `.env.local` fica no `.gitignore` e `.env.example` só tem os nomes.
 - Headers: `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`.
@@ -493,7 +493,7 @@ src/
   components/ (ui/, publico/, painel/)
   db/ (schema.ts, index.ts, seed.ts, migrations/)
   lib/ (datas.ts, disponibilidade.ts, regras.ts, protocolo.ts, telefone.ts, templates.ts, whatsapp.ts, calendar.ts, auth.ts, rate-limit.ts, config.ts)
-  middleware.ts
+  proxy.ts  (Next 16: substitui middleware.ts)
 tests/ (regras.test.ts, disponibilidade.test.ts, templates.test.ts, concorrencia.test.ts)
 DOCS.md · .env.example · CLAUDE.md · SPEC.md
 ```

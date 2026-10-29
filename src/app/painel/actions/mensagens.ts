@@ -1,0 +1,2 @@
+// Placeholder (etapa futura)
+export {};

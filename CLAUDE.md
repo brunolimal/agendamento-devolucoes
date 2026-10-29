@@ -33,3 +33,6 @@ Não adicionar dependências fora desta lista sem perguntar.
 
 ## Antes de deploy (se as skills estiverem disponíveis)
 Rodar a auditoria de segurança (`seguranca-sistemas`), gerar ou atualizar o `DOCS.md` no padrão `padrao-documentacao` e, por fim, fazer o deploy.
+
+## Convenções da versão do Next
+- Next 16: `middleware.ts` foi renomeado para `src/proxy.ts` (função exportada `proxy`). Onde a SPEC ou o PROMPTS falarem em "middleware", leia "proxy".
