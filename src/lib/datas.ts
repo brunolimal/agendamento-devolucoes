@@ -1,5 +1,5 @@
 import { TZDate } from "@date-fns/tz";
-import { format } from "date-fns";
+import { addDays, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 export const FUSO = "America/Sao_Paulo";
@@ -36,4 +36,21 @@ export function formatarDataHora(valor: Date | string): string {
 /** Ex.: "segunda-feira, 05 de janeiro" */
 export function formatarDiaExtenso(valor: Date | string): string {
   return format(paraSP(valor), "EEEE, dd 'de' MMMM", { locale: ptBR });
+}
+
+/** Soma `n` dias (pode ser negativo) a uma data yyyy-MM-dd. */
+export function somarDias(data: string, n: number): string {
+  return format(addDays(paraSP(data), n), "yyyy-MM-dd");
+}
+
+/** Dia da semana de uma data yyyy-MM-dd (0 = domingo, igual ao extract(dow)). */
+export function diaSemana(data: string): number {
+  return paraSP(data).getDay();
+}
+
+/** Instante (UTC) de uma data yyyy-MM-dd e hora HH:mm no fuso de São Paulo. */
+export function instanteSP(data: string, hora = "12:00"): Date {
+  const [ano, mes, dia] = data.split("-").map(Number);
+  const [h, m] = hora.split(":").map(Number);
+  return new Date(new TZDate(ano, mes - 1, dia, h, m, FUSO).getTime());
 }
