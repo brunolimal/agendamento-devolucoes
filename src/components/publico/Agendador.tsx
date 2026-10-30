@@ -2,20 +2,44 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { buscarDisponibilidadeMes, criarAgendamento, type DiaPublico } from "@/app/agendar/actions";
+import { buscarDisponibilidadeMes, criarAgendamento } from "@/app/agendar/actions";
+import { buscarDisponibilidadeMesPainel, criarAgendamentoManual } from "@/app/painel/actions/agendamentos";
 import { IlustracaoCaminhao } from "@/components/ui/IlustracaoCaminhao";
 import { IlustracaoMaterial } from "@/components/ui/IlustracaoMaterial";
-import { formatarDiaExtenso, formatarHora, mesDe } from "@/lib/datas";
+import { formatarDiaExtenso, formatarHora, mesDe, somarDias } from "@/lib/datas";
 import { mascararEntrada, normalizarTelefone } from "@/lib/telefone";
 import { Calendario } from "./Calendario";
 
+interface JanelaCalendario {
+  janelaId: number;
+  horaInicio: string;
+  horaFim: string;
+  vagas: number;
+  disponivel: boolean;
+  /** Só no painel: ocupação X/Y e bloqueio. */
+  capacidade?: number;
+  ocupado?: number;
+  bloqueada?: boolean;
+}
+interface DiaCalendario {
+  data: string;
+  disponivel: boolean;
+  janelas: JanelaCalendario[];
+}
+
 interface Props {
-  regrasAceite: string;
+  /** `publico` (cliente, /agendar) ou `painel` (colaborador, /painel/novo, RN-10). */
+  modo?: "publico" | "painel";
+  regrasAceite?: string;
   portes: { codigo: string; nome: string; descricao: string | null; pesoVagas: number }[];
   materiais: { codigo: string; nome: string }[];
+  /** Primeira e última data liberadas ao cliente (modo público). */
   min: string;
   max: string;
-  inicio: string;
+  /** Instante de abertura assinado (modo público: tempo mínimo de preenchimento). */
+  inicio?: string;
+  /** Data de hoje em São Paulo (modo painel). */
+  hoje?: string;
 }
 
 type Volume = "PEQUENO" | "MEDIO" | "GRANDE" | "NAO_SEI";
@@ -26,12 +50,14 @@ const VOLUMES: { valor: Volume; rotulo: string }[] = [
   { valor: "NAO_SEI", rotulo: "Não sei informar" },
 ];
 const PASSOS = ["Data e horário", "Seus dados", "Carga", "Revisão"];
+const PASSOS_PAINEL = ["Data e horário", "Dados do cliente", "Carga", "Revisão"];
 
 const entrada =
   "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base outline-none focus:border-primaria focus:ring-2 focus:ring-primaria/30";
 const botaoPrimario =
   "w-full rounded-xl bg-primaria px-5 py-4 text-lg font-semibold text-white disabled:opacity-50 active:opacity-90";
 const botaoSecundario = "w-full rounded-xl border border-slate-300 bg-white px-5 py-4 text-lg font-semibold text-slate-700";
+const botaoAviso = "w-full rounded-xl bg-orange-600 px-5 py-4 text-lg font-semibold text-white disabled:opacity-50";
 
 function Campo({ rotulo, erro, children }: { rotulo: string; erro?: string; children: React.ReactNode }) {
   return (
@@ -43,14 +69,19 @@ function Campo({ rotulo, erro, children }: { rotulo: string; erro?: string; chil
   );
 }
 
-export function Agendador({ regrasAceite, portes, materiais, min, max, inicio }: Props) {
+export function Agendador({ modo = "publico", regrasAceite = "", portes, materiais, min, max, inicio = "", hoje = "" }: Props) {
   const router = useRouter();
+  const manual = modo === "painel";
   const [passo, setPasso] = useState(1);
 
+  // limites do calendário: o cliente só vê hoje+min..hoje+max; o painel vê tudo a partir de hoje
+  const mesMin = mesDe(manual ? hoje : min);
+  const mesMax = mesDe(manual ? somarDias(hoje, 3650) : max);
+
   // passo 1
-  const [mes, setMes] = useState(mesDe(min));
+  const [mes, setMes] = useState(mesMin);
   const [versao, setVersao] = useState(0);
-  const [carga, setCarga] = useState<{ chave: string; dias: DiaPublico[] } | null>(null);
+  const [carga, setCarga] = useState<{ chave: string; dias: DiaCalendario[] } | null>(null);
   const [data, setData] = useState<string | null>(null);
   const [janelaId, setJanelaId] = useState<number | null>(null);
 
@@ -71,9 +102,11 @@ export function Agendador({ regrasAceite, portes, materiais, min, max, inicio }:
 
   // passo 4
   const [aceite, setAceite] = useState(false);
-  const [website, setWebsite] = useState(""); // honeypot
+  const [confirmar, setConfirmar] = useState(true); // RN-10: já nasce CONFIRMADO
+  const [website, setWebsite] = useState(""); // honeypot (só público)
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [podeForcar, setPodeForcar] = useState(false);
   const [campos, setCampos] = useState<Record<string, string>>({});
 
   const peso = portes.find((p) => p.codigo === porteCodigo)?.pesoVagas ?? 1;
@@ -82,16 +115,28 @@ export function Agendador({ regrasAceite, portes, materiais, min, max, inicio }:
 
   useEffect(() => {
     let ativo = true;
-    buscarDisponibilidadeMes({ mes, peso }).then((dias) => {
+    const buscar = manual ? buscarDisponibilidadeMesPainel : buscarDisponibilidadeMes;
+    buscar({ mes, peso }).then((dias) => {
       if (ativo) setCarga({ chave: `${mes}|${peso}|${versao}`, dias });
     });
     return () => {
       ativo = false;
     };
-  }, [mes, peso, versao]);
+  }, [mes, peso, versao, manual]);
 
   const dias = carga && !carregando ? carga.dias : [];
-  const disponiveis = new Set(dias.filter((d) => d.disponivel).map((d) => d.data));
+  // painel: qualquer data com janela (mesmo lotada, pois o colaborador pode forçar) a partir de hoje
+  const disponiveis = new Set(
+    dias.filter((d) => (manual ? d.janelas.length > 0 && d.data >= hoje : d.disponivel)).map((d) => d.data),
+  );
+  const tons: Record<string, "parcial" | "cheio"> = {};
+  if (manual) {
+    for (const d of dias) {
+      if (d.janelas.length === 0) continue;
+      if (d.janelas.every((j) => !j.disponivel)) tons[d.data] = "cheio";
+      else if (d.janelas.some((j) => (j.ocupado ?? 0) > 0)) tons[d.data] = "parcial";
+    }
+  }
   const diaSelecionado = dias.find((d) => d.data === data);
   const janelaEscolhida = diaSelecionado?.janelas.find((j) => j.janelaId === janelaId);
 
@@ -103,7 +148,7 @@ export function Agendador({ regrasAceite, portes, materiais, min, max, inicio }:
       if (!data || !janelaId) e.janela = "Escolha uma data e um horário";
     }
     if (p === 2) {
-      if (nome.trim().length < 2) e.nome = "Informe seu nome";
+      if (nome.trim().length < 2) e.nome = manual ? "Informe o nome do cliente" : "Informe seu nome";
       if (empresa.trim().length < 1) e.empresa = "Informe a empresa";
       if (!normalizarTelefone(whatsapp)) e.whatsapp = "WhatsApp inválido (DDD + número)";
       if (!contrato.trim()) e.contrato = "Informe o nº do contrato ou da obra";
@@ -130,12 +175,16 @@ export function Agendador({ regrasAceite, portes, materiais, min, max, inicio }:
     setPasso(passo - 1);
   }
 
-  async function enviar() {
+  // RN-07/RN-10: para nascer CONFIRMADO, porte e volume precisam estar definidos
+  const faltaDefinir = manual && confirmar && (porteCodigo === "NAO_SEI" || volume === "NAO_SEI");
+
+  async function enviar(forcar = false) {
     if (!data || !janelaId || !volume || !porteCodigo) return;
     setEnviando(true);
     setErro(null);
+    setPodeForcar(false);
     setCampos({});
-    const r = await criarAgendamento({
+    const base = {
       data,
       janelaId,
       nome,
@@ -149,10 +198,22 @@ export function Agendador({ regrasAceite, portes, materiais, min, max, inicio }:
       placa,
       motorista,
       observacoes,
-      aceite,
-      website,
-      inicio,
-    });
+    };
+
+    if (manual) {
+      const r = await criarAgendamentoManual({ ...base, confirmar, forcar });
+      if (r.ok) {
+        router.push(`/painel/agendamentos/${r.id}${confirmar ? "?avisar=CONFIRMACAO" : ""}`);
+        return;
+      }
+      setEnviando(false);
+      setErro(r.erro);
+      setCampos(r.campos ?? {});
+      setPodeForcar(Boolean(r.podeForcar));
+      return;
+    }
+
+    const r = await criarAgendamento({ ...base, aceite, website, inicio });
     if (r.ok) {
       router.push(`/agendar/protocolo/${r.protocolo}`);
       return;
@@ -173,11 +234,12 @@ export function Agendador({ regrasAceite, portes, materiais, min, max, inicio }:
 
   const nomePorte = portes.find((p) => p.codigo === porteCodigo)?.nome;
   const nomesMateriais = materiais.filter((m) => materiaisSel.includes(m.codigo)).map((m) => m.nome);
+  const passos = manual ? PASSOS_PAINEL : PASSOS;
 
   return (
     <div className="space-y-4">
       <ol className="flex gap-1" aria-label="Passos">
-        {PASSOS.map((p, i) => (
+        {passos.map((p, i) => (
           <li key={p} className="flex-1">
             <div className={`h-1.5 rounded-full ${i + 1 <= passo ? "bg-primaria" : "bg-slate-200"}`} />
             <span className={`mt-1 block text-xs ${i + 1 === passo ? "font-semibold text-slate-900" : "text-slate-500"}`}>
@@ -200,14 +262,21 @@ export function Agendador({ regrasAceite, portes, materiais, min, max, inicio }:
             disponiveis={disponiveis}
             selecionada={data}
             carregando={carregando}
-            mesMin={mesDe(min)}
-            mesMax={mesDe(max)}
+            tons={tons}
+            mesMin={mesMin}
+            mesMax={mesMax}
             onSelecionar={(d) => {
               setData(d);
               setJanelaId(null);
             }}
             onMes={setMes}
           />
+          {manual && (
+            <p className="text-xs text-slate-500">
+              Cores: <span className="rounded bg-amber-100 px-1">com reservas</span>{" "}
+              <span className="rounded bg-red-100 px-1">lotado</span>. O painel libera qualquer data a partir de hoje.
+            </p>
+          )}
           {diaSelecionado && (
             <div className="space-y-2">
               <h2 className="font-semibold capitalize">{formatarDiaExtenso(diaSelecionado.data)}</h2>
@@ -216,22 +285,32 @@ export function Agendador({ regrasAceite, portes, materiais, min, max, inicio }:
                   <button
                     key={j.janelaId}
                     type="button"
-                    disabled={!j.disponivel}
+                    disabled={!manual && !j.disponivel}
                     onClick={() => setJanelaId(j.janelaId)}
                     aria-pressed={j.janelaId === janelaId}
                     className={`rounded-xl border px-3 py-3 text-left disabled:opacity-40 ${
                       j.janelaId === janelaId ? "border-primaria bg-primaria/10 ring-2 ring-primaria" : "border-slate-300 bg-white"
-                    }`}
+                    } ${manual && !j.disponivel ? "bg-red-50" : ""}`}
                   >
                     <span className="block font-semibold">
                       {formatarHora(j.horaInicio)} às {formatarHora(j.horaFim)}
                     </span>
                     <span className="text-sm text-slate-600">
-                      {j.disponivel ? `vagas restantes: ${j.vagas}` : "indisponível"}
+                      {manual
+                        ? `${j.ocupado ?? 0}/${j.capacidade ?? 0} ocupadas${j.bloqueada ? " · bloqueada" : !j.disponivel ? " · sem vaga" : ""}`
+                        : j.disponivel
+                          ? `vagas restantes: ${j.vagas}`
+                          : "indisponível"}
                     </span>
                   </button>
                 ))}
               </div>
+              {manual && janelaEscolhida && !janelaEscolhida.disponivel && (
+                <p className="rounded-xl bg-orange-50 p-3 text-sm text-orange-900 ring-1 ring-orange-200">
+                  {janelaEscolhida.bloqueada ? "Essa janela está bloqueada." : "Essa janela não comporta o caminhão escolhido."} Só
+                  será possível agendar forçando, com confirmação no último passo.
+                </p>
+              )}
             </div>
           )}
           {errosPasso.janela && <p className="text-sm text-red-700">{errosPasso.janela}</p>}
@@ -381,18 +460,37 @@ export function Agendador({ regrasAceite, portes, materiais, min, max, inicio }:
               </div>
             ))}
           </dl>
-          <label className="flex items-start gap-3 rounded-xl bg-white p-4 ring-1 ring-slate-200">
-            <input type="checkbox" className="mt-1 h-5 w-5 accent-primaria" checked={aceite} onChange={(e) => setAceite(e.target.checked)} />
-            <span className="text-sm text-slate-700">{regrasAceite}</span>
-          </label>
-          {campos.aceite && <p className="text-sm text-red-700">{campos.aceite}</p>}
-          {/* honeypot: campo invisível; humanos não preenchem */}
-          <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
-            <label>
-              Site
-              <input tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} />
-            </label>
-          </div>
+
+          {manual ? (
+            <>
+              <label className="flex items-start gap-3 rounded-xl bg-white p-4 ring-1 ring-slate-200">
+                <input type="checkbox" className="mt-1 h-5 w-5 accent-primaria" checked={confirmar} onChange={(e) => setConfirmar(e.target.checked)} />
+                <span className="text-sm text-slate-700">
+                  <strong>Já nasce CONFIRMADO.</strong> Desmarque para criar como SOLICITADO (precisará ser confirmado depois).
+                </span>
+              </label>
+              {faltaDefinir && (
+                <p className="rounded-xl bg-yellow-50 p-3 text-sm text-yellow-900 ring-1 ring-yellow-200">
+                  Para já nascer confirmado é preciso definir o caminhão e o volume. Volte e defina, ou desmarque a opção acima.
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <label className="flex items-start gap-3 rounded-xl bg-white p-4 ring-1 ring-slate-200">
+                <input type="checkbox" className="mt-1 h-5 w-5 accent-primaria" checked={aceite} onChange={(e) => setAceite(e.target.checked)} />
+                <span className="text-sm text-slate-700">{regrasAceite}</span>
+              </label>
+              {campos.aceite && <p className="text-sm text-red-700">{campos.aceite}</p>}
+              {/* honeypot: campo invisível; humanos não preenchem */}
+              <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
+                <label>
+                  Site
+                  <input tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} />
+                </label>
+              </div>
+            </>
+          )}
         </section>
       )}
 
@@ -406,12 +504,27 @@ export function Agendador({ regrasAceite, portes, materiais, min, max, inicio }:
           <button type="button" className={botaoPrimario} onClick={avancar}>
             Continuar
           </button>
+        ) : manual ? (
+          <button type="button" className={botaoPrimario} onClick={() => enviar(false)} disabled={enviando || faltaDefinir}>
+            {enviando ? "Criando..." : "Criar agendamento"}
+          </button>
         ) : (
-          <button type="button" className={botaoPrimario} onClick={enviar} disabled={!aceite || enviando}>
+          <button type="button" className={botaoPrimario} onClick={() => enviar()} disabled={!aceite || enviando}>
             {enviando ? "Enviando..." : "Solicitar agendamento"}
           </button>
         )}
       </div>
+
+      {manual && passo === 4 && podeForcar && (
+        <div className="space-y-2 rounded-xl bg-orange-50 p-4 ring-1 ring-orange-200">
+          <p className="text-sm text-orange-900">
+            Forçar ignora a capacidade (ou o bloqueio) dessa janela e fica registrado no histórico como &quot;Forçou a vaga&quot;.
+          </p>
+          <button type="button" className={botaoAviso} onClick={() => enviar(true)} disabled={enviando || faltaDefinir}>
+            Agendar mesmo assim
+          </button>
+        </div>
+      )}
     </div>
   );
 }

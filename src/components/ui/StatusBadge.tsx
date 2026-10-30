@@ -11,7 +11,7 @@ export const ROTULO_STATUS: Record<Status, string> = {
 };
 
 // Cores fixas por status (SPEC §5).
-const COR_STATUS: Record<Status, string> = {
+export const COR_STATUS: Record<Status, string> = {
   SOLICITADO: "bg-yellow-100 text-yellow-900 ring-yellow-300",
   CONFIRMADO: "bg-green-100 text-green-900 ring-green-300",
   RECUSADO: "bg-slate-200 text-slate-800 ring-slate-300",

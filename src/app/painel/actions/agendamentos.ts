@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -8,8 +9,9 @@ import { agendamentos, historico, janelas, materiais, portesCaminhao, volumeCarg
 import { exigirSessao } from "@/lib/auth";
 import { estadoSyncPendente } from "@/lib/calendar";
 import { getConfig } from "@/lib/config";
-import { formatarHora, hojeSP } from "@/lib/datas";
-import { buscarDisponibilidade, type JanelaDisponivel } from "@/lib/disponibilidade";
+import { formatarHora, hojeSP, limitesDoMes } from "@/lib/datas";
+import { buscarDisponibilidade, type DiaDisponivel, type JanelaDisponivel } from "@/lib/disponibilidade";
+import { gerarToken, prefixoProtocolo } from "@/lib/protocolo";
 import {
   podeConfirmar,
   podeEditar,
@@ -17,6 +19,7 @@ import {
   podeReagendar,
   podeTransitar,
   requerAlinhamento,
+  statusInicial,
   type Status,
 } from "@/lib/regras";
 import {
@@ -383,4 +386,110 @@ export async function janelasDoDia(entrada: unknown): Promise<JanelaDisponivel[]
     ignorarLimites: true,
   });
   return dia?.janelas ?? [];
+}
+
+// ---------------------------------------------------------------- agendamento manual (RN-10)
+
+const mesPainelSchema = z.object({
+  mes: z.string().regex(/^(20\d{2}|2100)-(0[1-9]|1[0-2])$/),
+  peso: z.number().int().min(1).max(4),
+});
+
+/** Disponibilidade de um mês para o /painel/novo: sem antecedência mínima/máxima, com ocupação X/Y. */
+export async function buscarDisponibilidadeMesPainel(entrada: unknown): Promise<DiaDisponivel[]> {
+  await exigirSessao();
+  const p = mesPainelSchema.safeParse(entrada);
+  if (!p.success) return [];
+  const { regras } = await getConfig();
+  const { de, ate } = limitesDoMes(p.data.mes);
+  return buscarDisponibilidade({ de, ate, hoje: hojeSP(), regras, peso: p.data.peso, ignorarLimites: true });
+}
+
+const manualSchema = novoAgendamentoSchema.extend({
+  /** RN-10: por padrão já nasce CONFIRMADO. */
+  confirmar: z.boolean(),
+  forcar: z.boolean().default(false),
+});
+
+export type ResultadoManual =
+  | { ok: true; id: string; protocolo: string }
+  | { ok: false; erro: string; codigo?: CodigoErro; podeForcar?: boolean; campos?: Record<string, string> };
+
+/** RN-10: cria pelo painel (origem PAINEL). assert_vaga + INSERT + histórico numa única transação. */
+export async function criarAgendamentoManual(entrada: unknown): Promise<ResultadoManual> {
+  await exigirSessao();
+  const p = manualSchema.safeParse(entrada);
+  if (!p.success) return { ok: false, erro: "Confira os campos destacados.", campos: errosPorCampo(p.error) };
+  const { confirmar, forcar, ...d } = p.data;
+
+  const hoje = hojeSP();
+  if (d.data < hoje) return { ok: false, erro: "Escolha uma data a partir de hoje." };
+
+  const status = statusInicial("PAINEL", confirmar);
+  if (status === "CONFIRMADO" && !podeConfirmar({ porteCodigo: d.porteCodigo, volume: d.volume })) {
+    return { ok: false, erro: "Para já nascer confirmado, defina o porte e o volume (não pode ficar 'Não sei')." };
+  }
+
+  const db = getDb();
+  const codigos = [...new Set(d.materiais)];
+  const [[porte], mats] = await Promise.all([
+    db.select().from(portesCaminhao).where(and(eq(portesCaminhao.codigo, d.porteCodigo), eq(portesCaminhao.ativo, true))),
+    db
+      .select({ codigo: materiais.codigo })
+      .from(materiais)
+      .where(and(inArray(materiais.codigo, codigos), eq(materiais.ativo, true))),
+  ]);
+  if (!porte) return { ok: false, erro: "Porte inválido.", campos: { porteCodigo: "Escolha uma opção" } };
+  if (mats.length !== codigos.length) {
+    return { ok: false, erro: "Material inválido.", campos: { materiais: "Escolha ao menos um material" } };
+  }
+
+  const id = randomUUID();
+  const prefixo = prefixoProtocolo(hoje);
+  const eventos = [
+    { agendamentoId: id, autor: "ADMIN", acao: "CRIADO", detalhes: { para: { data: d.data, janelaId: d.janelaId, status, porte: d.porteCodigo, volume: d.volume } } },
+    ...(status === "CONFIRMADO"
+      ? [{ agendamentoId: id, autor: "ADMIN", acao: "CONFIRMADO", detalhes: { para: { status: "CONFIRMADO" }, forcou: forcar } }]
+      : []),
+    ...(forcar ? [{ agendamentoId: id, autor: "ADMIN", acao: "FORCOU_VAGA", detalhes: { data: d.data, janelaId: d.janelaId } }] : []),
+  ];
+
+  try {
+    const resultados = await executarBatch([
+      assertVaga({ data: d.data, janelaId: d.janelaId, peso: porte.pesoVagas, forcar }),
+      db
+        .insert(agendamentos)
+        .values({
+          id,
+          protocolo: sql`${prefixo}::text || lpad(nextval('protocolo_seq')::text, 4, '0')`,
+          token: gerarToken(),
+          data: d.data,
+          janelaId: d.janelaId,
+          status,
+          requerAlinhamento: requerAlinhamento(d.porteCodigo, d.volume),
+          origem: "PAINEL",
+          nome: d.nome,
+          empresa: d.empresa,
+          whatsapp: d.whatsapp,
+          contrato: d.contrato,
+          materiais: codigos,
+          materiaisOutros: d.materiaisOutros,
+          volume: d.volume,
+          porteCodigo: d.porteCodigo,
+          pesoVagas: porte.pesoVagas,
+          placa: d.placa,
+          motorista: d.motorista,
+          observacoes: d.observacoes,
+          calendarSync: status === "CONFIRMADO" ? estadoSyncPendente() : undefined,
+        })
+        .returning({ protocolo: agendamentos.protocolo }),
+      db.insert(historico).values(eventos),
+    ]);
+    const [linha] = resultados[1] as { protocolo: string }[];
+    atualizarTelas();
+    return { ok: true, id, protocolo: linha.protocolo };
+  } catch (e) {
+    const { codigo, mensagem } = mensagemDoErro(e, "painel");
+    return { ok: false, erro: mensagem, codigo, podeForcar: codigo === "SEM_VAGA" || codigo === "DATA_BLOQUEADA" };
+  }
 }

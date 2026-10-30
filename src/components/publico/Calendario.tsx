@@ -8,6 +8,8 @@ interface Props {
   disponiveis: Set<string>;
   selecionada: string | null;
   carregando: boolean;
+  /** Lotação do dia (painel): colore o dia sem desabilitá-lo. */
+  tons?: Record<string, "parcial" | "cheio">;
   mesMin: string;
   mesMax: string;
   onSelecionar: (data: string) => void;
@@ -16,7 +18,7 @@ interface Props {
 
 const CABECALHO = ["D", "S", "T", "Q", "Q", "S", "S"];
 
-export function Calendario({ mes, disponiveis, selecionada, carregando, mesMin, mesMax, onSelecionar, onMes }: Props) {
+export function Calendario({ mes, disponiveis, selecionada, carregando, tons, mesMin, mesMax, onSelecionar, onMes }: Props) {
   const { de, ate } = limitesDoMes(mes);
   const dias = listarDias(de, ate);
   const vazios = diaSemana(de);
@@ -69,7 +71,11 @@ export function Calendario({ mes, disponiveis, selecionada, carregando, mesMin, 
                 ativa
                   ? "bg-primaria text-white"
                   : livre
-                    ? "bg-slate-100 text-slate-900 active:bg-slate-200"
+                    ? tons?.[data] === "cheio"
+                      ? "bg-red-100 text-red-900 active:bg-red-200"
+                      : tons?.[data] === "parcial"
+                        ? "bg-amber-100 text-amber-900 active:bg-amber-200"
+                        : "bg-slate-100 text-slate-900 active:bg-slate-200"
                     : "text-slate-300"
               }`}
             >

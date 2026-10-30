@@ -92,3 +92,11 @@ export function formatarMes(mes: string): string {
 export function formatarDiaMesHora(valor: Date | string): string {
   return format(paraSP(valor), "dd/MM HH:mm", { locale: ptBR });
 }
+
+/** Intervalo exibido na agenda: o próprio dia, ou a semana de segunda a domingo que o contém. */
+export function intervaloDaVisao(data: string, visao: "dia" | "semana"): { de: string; ate: string } {
+  if (visao === "dia") return { de: data, ate: data };
+  const deslocamento = (diaSemana(data) + 6) % 7; // segunda = 0
+  const de = somarDias(data, -deslocamento);
+  return { de, ate: somarDias(de, 6) };
+}
