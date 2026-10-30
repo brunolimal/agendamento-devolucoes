@@ -1,4 +1,4 @@
-import type { Marca, Regras, Templates } from "./config";
+import type { Marca, Regras, Templates } from "./config-schemas";
 import { formatarData, formatarDiaSemana, formatarHora } from "./datas";
 import { limiteCancelamento, type Status } from "./regras";
 
@@ -192,3 +192,34 @@ export function tiposDisponiveis(status: Status, requerAlinhamento: boolean, rea
   tipos.push("LIVRE");
   return tipos;
 }
+
+/** Descrição de cada variável (SPEC §11), para o editor de mensagens. */
+export const DESCRICAO_VARIAVEL: Record<NomeVariavel, string> = {
+  nome: "Nome do cliente",
+  empresa_cliente: "Empresa do cliente",
+  protocolo: "Protocolo",
+  data: "Data (DD/MM/AAAA)",
+  dia_semana: "Dia da semana",
+  hora_inicio: "Início da janela",
+  hora_fim: "Fim da janela",
+  data_anterior: "Data antes do reagendamento",
+  janela_anterior: "Janela antes do reagendamento",
+  porte: "Porte do caminhão",
+  materiais: "Materiais",
+  endereco_patio: "Endereço do pátio",
+  link_maps: "Link do mapa",
+  link: "Link da página do cliente",
+  limite_cancelamento: "Data limite para cancelar pelo link",
+  motivo: "Motivo da recusa ou do cancelamento",
+  nome_empresa: "Nome da empresa (marca)",
+};
+
+export const ROTULO_TEMPLATE: Record<keyof Templates, string> = {
+  confirmacao: "Confirmação",
+  alinhamento: "Alinhamento",
+  recusa: "Recusa",
+  lembrete: "Lembrete",
+  reagendamento: "Reagendamento",
+  cancelamento_empresa: "Cancelamento pela empresa",
+  cancelamento_cliente_ok: "Cancelamento recebido (cliente)",
+};
