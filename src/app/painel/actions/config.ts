@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { and, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { revalidatePath } from "next/cache";
@@ -10,13 +11,15 @@ import {
   bloqueios,
   capacidadeExcecoes,
   configuracao,
+  imagens,
   janelas,
   materiais,
   portesCaminhao,
 } from "@/db/schema";
 import { exigirSessao } from "@/lib/auth";
-import { getConfig, marcaSchema, regrasSchema, templatesSchema, TIPOS_TEMPLATE, urlHttp } from "@/lib/config";
+import { getConfig, marcaSchema, regrasSchema, templatesSchema, TIPOS_TEMPLATE } from "@/lib/config";
 import { diaSemana, hojeSP } from "@/lib/datas";
+import { CODIGO_REGEX, LIMITES_IMAGEM, TIPOS_IMAGEM, urlDaImagem, validarImagem, type TipoImagem } from "@/lib/imagem";
 import { descreverJanela, encontrarSobreposicao, NOMES_DIA, planejarCopia } from "@/lib/janelas";
 import { STATUS_QUE_OCUPAM } from "@/lib/regras";
 import { normalizarTelefone, soDigitos } from "@/lib/telefone";
@@ -372,17 +375,12 @@ export async function removerBloqueio(entrada: unknown): Promise<ResultadoConfig
 }
 
 // ---------------------------------------------------------------- portes e materiais (só editar e ativar/desativar)
+// A imagem de cada um só entra pelo upload (enviarImagem): não existe campo de imagem por link.
 
 const porteSchema = z.object({
   codigo: z.string().min(1).max(40),
   nome: z.string().trim().min(1, "Informe o nome").max(40, "Máximo de 40 caracteres"),
   descricao: z.string().trim().max(200, "Máximo de 200 caracteres").nullish().transform((v) => v || null),
-  imagemUrl: z
-    .string()
-    .trim()
-    .nullish()
-    .transform((v) => v || null)
-    .pipe(urlHttp.nullable()),
   pesoVagas: z.number({ error: "Informe o peso" }).int().min(1, "Mínimo 1").max(4, "Máximo 4"),
   ordem: z.number({ error: "Informe a ordem" }).int().min(0).max(99),
   ativo: z.boolean(),
@@ -408,7 +406,7 @@ export async function salvarPorte(entrada: unknown): Promise<ResultadoConfig> {
 
   await db
     .update(portesCaminhao)
-    .set({ nome: d.nome, descricao: d.descricao, imagemUrl: d.imagemUrl, pesoVagas: d.pesoVagas, ordem: d.ordem, ativo: d.ativo })
+    .set({ nome: d.nome, descricao: d.descricao, pesoVagas: d.pesoVagas, ordem: d.ordem, ativo: d.ativo })
     .where(eq(portesCaminhao.codigo, d.codigo));
   recarregar();
   return ok(
@@ -444,4 +442,98 @@ export async function salvarMaterial(entrada: unknown): Promise<ResultadoConfig>
   await db.update(materiais).set({ nome: d.nome, ordem: d.ordem, ativo: d.ativo }).where(eq(materiais.codigo, d.codigo));
   recarregar();
   return ok(`Material ${d.nome} salvo.`);
+}
+
+// ---------------------------------------------------------------- imagens de portes e materiais (upload)
+
+const envioImagemSchema = z.object({
+  tipo: z.enum(TIPOS_IMAGEM as [TipoImagem, ...TipoImagem[]]),
+  codigo: z.string().regex(CODIGO_REGEX),
+  arquivo: z.instanceof(File),
+});
+
+async function itemExiste(tipo: TipoImagem, codigo: string): Promise<boolean> {
+  const db = getDb();
+  const linhas =
+    tipo === "porte"
+      ? await db.select({ c: portesCaminhao.codigo }).from(portesCaminhao).where(eq(portesCaminhao.codigo, codigo))
+      : await db.select({ c: materiais.codigo }).from(materiais).where(eq(materiais.codigo, codigo));
+  return linhas.length > 0;
+}
+
+/**
+ * Upload de imagem (SPEC §10). O navegador já reduziu o arquivo; aqui o servidor revalida tudo:
+ * tamanho, formato real (assinatura dos bytes, nunca o tipo informado) e dimensões.
+ */
+export async function enviarImagem(formData: FormData): Promise<ResultadoConfig> {
+  await exigirSessao();
+  const p = envioImagemSchema.safeParse({
+    tipo: formData.get("tipo"),
+    codigo: formData.get("codigo"),
+    arquivo: formData.get("arquivo"),
+  });
+  if (!p.success) return falha("Escolha um arquivo de imagem.");
+  const { tipo, codigo, arquivo } = p.data;
+
+  // confere o tamanho antes de ler o conteúdo
+  if (arquivo.size > LIMITES_IMAGEM.maxBytes) {
+    return falha(`A imagem tem mais de ${LIMITES_IMAGEM.maxBytes / 1024} KB depois de reduzida. Use uma imagem mais simples.`);
+  }
+  const bytes = new Uint8Array(await arquivo.arrayBuffer());
+  const v = validarImagem(bytes);
+  if (!v.ok) return falha(v.erro);
+  if (!(await itemExiste(tipo, codigo))) return falha(tipo === "porte" ? "Porte não encontrado." : "Material não encontrado.");
+
+  const hash = createHash("sha256").update(bytes).digest("hex");
+  const url = urlDaImagem(tipo, codigo, hash);
+  const dados = Buffer.from(bytes).toString("base64");
+  const db = getDb();
+  try {
+    await executarBatch([
+      db
+        .insert(imagens)
+        .values({ tipo, codigo, tipoMime: v.tipoMime, dados, tamanho: v.tamanho, largura: v.largura, altura: v.altura, hash })
+        .onConflictDoUpdate({
+          target: [imagens.tipo, imagens.codigo],
+          set: {
+            tipoMime: v.tipoMime,
+            dados,
+            tamanho: v.tamanho,
+            largura: v.largura,
+            altura: v.altura,
+            hash,
+            atualizadoEm: sql`now()`,
+          },
+        }),
+      tipo === "porte"
+        ? db.update(portesCaminhao).set({ imagemUrl: url }).where(eq(portesCaminhao.codigo, codigo))
+        : db.update(materiais).set({ imagemUrl: url }).where(eq(materiais.codigo, codigo)),
+    ]);
+  } catch {
+    return falha("Não foi possível salvar a imagem. Tente novamente.");
+  }
+  recarregar();
+  return ok("Imagem salva. Já aparece para o cliente.");
+}
+
+const chaveImagemSchema = z.object({
+  tipo: z.enum(TIPOS_IMAGEM as [TipoImagem, ...TipoImagem[]]),
+  codigo: z.string().regex(CODIGO_REGEX),
+});
+
+/** Remove a imagem enviada: o cliente volta a ver o ícone padrão. */
+export async function removerImagem(entrada: unknown): Promise<ResultadoConfig> {
+  await exigirSessao();
+  const p = chaveImagemSchema.safeParse(entrada);
+  if (!p.success) return falha("Dados inválidos.");
+  const { tipo, codigo } = p.data;
+  const db = getDb();
+  await executarBatch([
+    db.delete(imagens).where(and(eq(imagens.tipo, tipo), eq(imagens.codigo, codigo))),
+    tipo === "porte"
+      ? db.update(portesCaminhao).set({ imagemUrl: null }).where(eq(portesCaminhao.codigo, codigo))
+      : db.update(materiais).set({ imagemUrl: null }).where(eq(materiais.codigo, codigo)),
+  ]);
+  recarregar();
+  return ok("Imagem removida. O cliente volta a ver o ícone padrão.");
 }

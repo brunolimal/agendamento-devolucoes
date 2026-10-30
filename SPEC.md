@@ -160,7 +160,7 @@ create table portes_caminhao (
   codigo text primary key,   -- VUC, TRES_QUARTOS, TOCO, TRUCK, CARRETA, NAO_SEI
   nome text not null,
   descricao text,            -- texto curto de ajuda ("até X m de carroceria") → [preencher pela empresa]
-  imagem_url text,           -- ilustração própria/genérica
+  imagem_url text,           -- imagem enviada pelo painel (rota /imagens/porte/{codigo}?v={hash}); nula = ícone padrão. Só o upload escreve aqui
   peso_vagas smallint not null default 1,
   ordem smallint not null,
   ativo boolean not null default true
@@ -169,8 +169,24 @@ create table portes_caminhao (
 create table materiais (
   codigo text primary key,   -- ESCORAS, FORMAS, ANDAIMES, PERFIS_VIGAS, TORRES, ACESSORIOS, OUTROS
   nome text not null,
+  imagem_url text,           -- igual a portes_caminhao.imagem_url (rota /imagens/material/{codigo}?v={hash})
   ordem smallint not null,
   ativo boolean not null default true
+);
+
+-- Imagens de portes e materiais, enviadas pelo painel (upload). Ficam no Neon, em base64, para não
+-- depender de serviço extra e para as consultas de portes/materiais não carregarem o conteúdo.
+create table imagens (
+  tipo text not null check (tipo in ('porte','material')),
+  codigo text not null,                 -- codigo do porte ou do material (integridade validada no app)
+  tipo_mime text not null check (tipo_mime in ('image/png','image/jpeg','image/webp')),
+  dados text not null,                  -- base64
+  tamanho int not null,                 -- bytes da imagem (antes do base64)
+  largura smallint not null,
+  altura smallint not null,
+  hash text not null,                   -- SHA-256 hex: ETag e versão na URL (cache imutável)
+  atualizado_em timestamptz not null default now(),
+  primary key (tipo, codigo)
 );
 
 create type status_agendamento as enum
@@ -312,7 +328,14 @@ end $$;
 | `/painel/agendamentos` | Busca e filtro (protocolo, nome, empresa, contrato, status, período) |
 | `/painel/agendamentos/[id]` | Detalhe completo, histórico, mensagens enviadas e ações (abaixo) |
 | `/painel/novo` | Agendamento manual (RN-10). Mesmo formulário, com todas as datas liberadas e indicação de lotação |
-| `/painel/config` | Abas: Marca · Regras · Janelas (editor por dia da semana, com "copiar para outros dias") · Exceções de capacidade · Bloqueios · Portes · Materiais · Mensagens (editor com variáveis e pré-visualização) |
+| `/painel/config` | Abas: Marca · Regras · Janelas (editor por dia da semana, com "copiar para outros dias") · Exceções de capacidade · Bloqueios · Portes (editar, ativar/desativar e **enviar imagem**) · Materiais (idem) · Mensagens (editor com variáveis e pré-visualização) |
+
+**Imagens de portes e materiais (aba Portes e Materiais):**
+- Upload de arquivo `png`, `jpg` ou `webp` (nunca SVG nem GIF). O navegador reduz o lado maior a **800 px** e recodifica (WebP) antes de enviar; limite do original: **5 MB**.
+- O servidor (`exigirSessao()` + zod) **não confia no tipo informado**: confere a assinatura dos bytes, lê as dimensões (32 a 2000 px) e rejeita acima de **500 KB** depois da redução.
+- A imagem é servida por `GET /imagens/{porte|material}/{codigo}` (pública, com `ETag`, `nosniff` e cache imutável quando a URL traz `?v={hash}`).
+- Aparece no passo "Carga" de `/agendar` e de `/painel/novo`. **Sem imagem, vale o ícone padrão.** O painel permite remover a imagem.
+- Não existe mais campo de imagem por link: a imagem só pode vir do upload.
 
 **Ações no detalhe:**
 - Confirmar (modal com porte e volume obrigatórios se faltarem)
@@ -462,6 +485,7 @@ Olá, {nome}! Recebemos o cancelamento da devolução {protocolo} de {data}. Qua
 - Nenhum segredo no repositório. `.env.local` fica no `.gitignore` e `.env.example` só tem os nomes.
 - Headers: `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`.
 - Toda entrada passa por zod. As queries são parametrizadas (Drizzle). Sem SQL concatenado, exceto nas migrations.
+- Upload de imagem: só `png/jpg/webp`, validado pela assinatura dos bytes no servidor; servido com `X-Content-Type-Options: nosniff`.
 
 ## 15. Variáveis de ambiente
 
@@ -485,6 +509,7 @@ Olá, {nome}! Recebemos o cancelamento da devolução {protocolo} de {data}. Qua
 src/
   app/
     page.tsx
+    imagens/[tipo]/[codigo]/ (route.ts)
     agendar/ (page.tsx, protocolo/[protocolo]/page.tsx, actions.ts)
     a/[token]/ (page.tsx, actions.ts)
     painel/
@@ -492,7 +517,7 @@ src/
       actions/ (agendamentos.ts, config.ts, mensagens.ts, demo.ts)
   components/ (ui/, publico/, painel/)
   db/ (schema.ts, index.ts, seed.ts, migrations/)
-  lib/ (datas.ts, disponibilidade.ts, regras.ts, protocolo.ts, telefone.ts, templates.ts, whatsapp.ts, calendar.ts, auth.ts, rate-limit.ts, config.ts)
+  lib/ (imagem.ts, datas.ts, disponibilidade.ts, regras.ts, protocolo.ts, telefone.ts, templates.ts, whatsapp.ts, calendar.ts, auth.ts, rate-limit.ts, config.ts)
   proxy.ts  (Next 16: substitui middleware.ts)
 tests/ (regras.test.ts, disponibilidade.test.ts, templates.test.ts, concorrencia.test.ts)
 DOCS.md · .env.example · CLAUDE.md · SPEC.md

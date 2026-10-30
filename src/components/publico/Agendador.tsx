@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { buscarDisponibilidadeMes, criarAgendamento } from "@/app/agendar/actions";
 import { buscarDisponibilidadeMesPainel, criarAgendamentoManual } from "@/app/painel/actions/agendamentos";
 import { IlustracaoCaminhao } from "@/components/ui/IlustracaoCaminhao";
+import { ImagemCatalogo } from "@/components/ui/ImagemCatalogo";
 import { IlustracaoMaterial } from "@/components/ui/IlustracaoMaterial";
 import { formatarDiaExtenso, formatarHora, mesDe, somarDias } from "@/lib/datas";
 import { mascararEntrada, normalizarTelefone } from "@/lib/telefone";
@@ -31,8 +32,8 @@ interface Props {
   /** `publico` (cliente, /agendar) ou `painel` (colaborador, /painel/novo, RN-10). */
   modo?: "publico" | "painel";
   regrasAceite?: string;
-  portes: { codigo: string; nome: string; descricao: string | null; pesoVagas: number }[];
-  materiais: { codigo: string; nome: string }[];
+  portes: { codigo: string; nome: string; descricao: string | null; pesoVagas: number; imagemUrl: string | null }[];
+  materiais: { codigo: string; nome: string; imagemUrl: string | null }[];
   /** Primeira e última data liberadas ao cliente (modo público). */
   min: string;
   max: string;
@@ -358,7 +359,11 @@ export function Agendador({ modo = "publico", regrasAceite = "", portes, materia
                       ativo ? "border-primaria bg-primaria/10 ring-2 ring-primaria" : "border-slate-300 bg-white"
                     }`}
                   >
-                    <IlustracaoMaterial codigo={m.codigo} className="h-8 w-8 shrink-0 text-primaria" />
+                    {m.imagemUrl ? (
+                      <ImagemCatalogo src={m.imagemUrl} className="h-10 w-10 shrink-0 rounded-md object-contain" />
+                    ) : (
+                      <IlustracaoMaterial codigo={m.codigo} className="h-8 w-8 shrink-0 text-primaria" />
+                    )}
                     <span className="font-medium">{m.nome}</span>
                   </button>
                 );
@@ -411,7 +416,11 @@ export function Agendador({ modo = "publico", regrasAceite = "", portes, materia
                     porteCodigo === p.codigo ? "border-primaria bg-primaria/10 ring-2 ring-primaria" : "border-slate-300 bg-white"
                   }`}
                 >
-                  <IlustracaoCaminhao codigo={p.codigo} className="mb-1 h-12 w-full text-primaria" />
+                  {p.imagemUrl ? (
+                    <ImagemCatalogo src={p.imagemUrl} alt={`Caminhão ${p.nome}`} className="mb-1 h-20 w-full object-contain" />
+                  ) : (
+                    <IlustracaoCaminhao codigo={p.codigo} className="mb-1 h-12 w-full text-primaria" />
+                  )}
                   <span className="block font-semibold">{p.codigo === "NAO_SEI" ? "Não sei / A alinhar" : p.nome}</span>
                   {p.descricao && !p.descricao.startsWith("[") && <span className="text-xs text-slate-600">{p.descricao}</span>}
                 </button>

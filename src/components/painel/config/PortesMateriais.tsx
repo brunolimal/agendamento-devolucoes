@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { salvarMaterial, salvarPorte } from "@/app/painel/actions/config";
 import { btnPrimario, campo, Campo, erroDe, Retorno, useEnvio } from "./ui";
+import { UploadImagem } from "./UploadImagem";
 
 export interface PorteLinha {
   codigo: string;
@@ -18,8 +19,8 @@ export function EditorPortes({ portes }: { portes: PorteLinha[] }) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-slate-600">
-        Edite nome, descrição, peso (quantas vagas o caminhão ocupa) e ordem, ou desative. O peso novo vale só para agendamentos
-        novos. Não é possível criar portes.
+        Edite nome, descrição, peso (quantas vagas o caminhão ocupa) e ordem, ou desative. Envie uma imagem para o cliente ver e
+        escolher; sem imagem, vale o ícone padrão. O peso novo vale só para agendamentos novos. Não é possível criar portes.
       </p>
       {portes.map((p) => (
         <LinhaPorte key={`${p.codigo}:${JSON.stringify(p)}`} inicial={p} />
@@ -32,7 +33,6 @@ function LinhaPorte({ inicial }: { inicial: PorteLinha }) {
   const [v, setV] = useState({
     nome: inicial.nome,
     descricao: inicial.descricao ?? "",
-    imagemUrl: inicial.imagemUrl ?? "",
     pesoVagas: String(inicial.pesoVagas),
     ordem: String(inicial.ordem),
     ativo: inicial.ativo,
@@ -40,8 +40,9 @@ function LinhaPorte({ inicial }: { inicial: PorteLinha }) {
   const { pendente, resultado, enviar } = useEnvio();
 
   return (
+    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
     <form
-      className="grid gap-3 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:grid-cols-6"
+      className="grid gap-3 sm:grid-cols-6"
       onSubmit={(e) => {
         e.preventDefault();
         void enviar(() =>
@@ -49,7 +50,6 @@ function LinhaPorte({ inicial }: { inicial: PorteLinha }) {
             codigo: inicial.codigo,
             nome: v.nome,
             descricao: v.descricao,
-            imagemUrl: v.imagemUrl,
             pesoVagas: v.pesoVagas === "" ? undefined : Number(v.pesoVagas),
             ordem: v.ordem === "" ? undefined : Number(v.ordem),
             ativo: v.ativo,
@@ -66,11 +66,6 @@ function LinhaPorte({ inicial }: { inicial: PorteLinha }) {
       <div className="sm:col-span-4">
         <Campo rotulo="Descrição curta" erro={erroDe(resultado, "descricao")}>
           <input className={campo} value={v.descricao} onChange={(e) => setV({ ...v, descricao: e.target.value })} maxLength={200} />
-        </Campo>
-      </div>
-      <div className="sm:col-span-3">
-        <Campo rotulo="Imagem (link opcional)" erro={erroDe(resultado, "imagemUrl")}>
-          <input className={campo} value={v.imagemUrl} onChange={(e) => setV({ ...v, imagemUrl: e.target.value })} placeholder="https://" />
         </Campo>
       </div>
       <Campo rotulo="Peso (vagas)" erro={erroDe(resultado, "pesoVagas")}>
@@ -90,12 +85,15 @@ function LinhaPorte({ inicial }: { inicial: PorteLinha }) {
         </button>
       </div>
     </form>
+    <UploadImagem tipo="porte" codigo={inicial.codigo} nome={inicial.nome} imagemUrl={inicial.imagemUrl} />
+    </div>
   );
 }
 
 export interface MaterialLinha {
   codigo: string;
   nome: string;
+  imagemUrl: string | null;
   ordem: number;
   ativo: boolean;
 }
@@ -103,7 +101,7 @@ export interface MaterialLinha {
 export function EditorMateriais({ materiais }: { materiais: MaterialLinha[] }) {
   return (
     <div className="space-y-3">
-      <p className="text-sm text-slate-600">Edite nome e ordem, ou desative. Não é possível criar materiais.</p>
+      <p className="text-sm text-slate-600">Edite nome e ordem, ou desative. Envie uma imagem para o cliente ver e escolher; sem imagem, vale o ícone padrão. Não é possível criar materiais.</p>
       {materiais.map((m) => (
         <LinhaMaterial key={`${m.codigo}:${JSON.stringify(m)}`} inicial={m} />
       ))}
@@ -116,8 +114,9 @@ function LinhaMaterial({ inicial }: { inicial: MaterialLinha }) {
   const { pendente, resultado, enviar } = useEnvio();
 
   return (
+    <div className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
     <form
-      className="grid items-end gap-3 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:grid-cols-[1fr_6rem_auto_auto]"
+      className="grid items-end gap-3 sm:grid-cols-[1fr_6rem_auto_auto]"
       onSubmit={(e) => {
         e.preventDefault();
         void enviar(() =>
@@ -142,5 +141,7 @@ function LinhaMaterial({ inicial }: { inicial: MaterialLinha }) {
         <Retorno resultado={resultado} />
       </div>
     </form>
+    <UploadImagem tipo="material" codigo={inicial.codigo} nome={inicial.nome} imagemUrl={inicial.imagemUrl} />
+    </div>
   );
 }

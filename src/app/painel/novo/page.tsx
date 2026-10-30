@@ -23,8 +23,8 @@ export default async function NovoAgendamento() {
         hoje={hoje}
         min={hoje}
         max={hoje}
-        portes={portes.map((p) => ({ codigo: p.codigo, nome: p.nome, descricao: p.descricao, pesoVagas: p.pesoVagas }))}
-        materiais={listaMateriais.map((m) => ({ codigo: m.codigo, nome: m.nome }))}
+        portes={portes.map((p) => ({ codigo: p.codigo, nome: p.nome, descricao: p.descricao, pesoVagas: p.pesoVagas, imagemUrl: p.imagemUrl }))}
+        materiais={listaMateriais.map((m) => ({ codigo: m.codigo, nome: m.nome, imagemUrl: m.imagemUrl }))}
       />
     </main>
   );

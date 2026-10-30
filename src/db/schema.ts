@@ -104,6 +104,7 @@ export const portesCaminhao = pgTable("portes_caminhao", {
 export const materiais = pgTable("materiais", {
   codigo: text("codigo").primaryKey(),
   nome: text("nome").notNull(),
+  imagemUrl: text("imagem_url"),
   ordem: smallint("ordem").notNull(),
   ativo: boolean("ativo").notNull().default(true),
 });
@@ -184,4 +185,25 @@ export const tentativasPublicas = pgTable(
     criadoEm: timestamp("criado_em", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("tentativas_publicas_ip_criado_idx").on(t.ipHash, t.criadoEm)],
+);
+
+/** Imagens de portes e materiais enviadas pelo painel (SPEC §7). Em base64 no Neon; servidas por /imagens/[tipo]/[codigo]. */
+export const imagens = pgTable(
+  "imagens",
+  {
+    tipo: text("tipo").notNull(),
+    codigo: text("codigo").notNull(),
+    tipoMime: text("tipo_mime").notNull(),
+    dados: text("dados").notNull(),
+    tamanho: integer("tamanho").notNull(),
+    largura: smallint("largura").notNull(),
+    altura: smallint("altura").notNull(),
+    hash: text("hash").notNull(),
+    atualizadoEm: timestamp("atualizado_em", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.tipo, t.codigo] }),
+    check("imagens_tipo", sql`${t.tipo} in ('porte','material')`),
+    check("imagens_tipo_mime", sql`${t.tipoMime} in ('image/png','image/jpeg','image/webp')`),
+  ],
 );

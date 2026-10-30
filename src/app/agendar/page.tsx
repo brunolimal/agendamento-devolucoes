@@ -26,8 +26,9 @@ export default async function PaginaAgendar() {
           nome: p.nome,
           descricao: p.descricao,
           pesoVagas: p.pesoVagas,
+          imagemUrl: p.imagemUrl,
         }))}
-        materiais={listaMateriais.map((m) => ({ codigo: m.codigo, nome: m.nome }))}
+        materiais={listaMateriais.map((m) => ({ codigo: m.codigo, nome: m.nome, imagemUrl: m.imagemUrl }))}
         min={min}
         max={max}
         inicio={assinarInicio()}

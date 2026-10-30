@@ -108,7 +108,7 @@ export async function executarSeed() {
   // 1) Limpa tudo e recria o cadastro base.
   await db.batch([
     db.execute(
-      sql`truncate table historico, mensagens_enviadas, agendamentos, tentativas_publicas, bloqueios, capacidade_excecoes, janelas, portes_caminhao, materiais, configuracao restart identity cascade`,
+      sql`truncate table historico, mensagens_enviadas, agendamentos, tentativas_publicas, bloqueios, capacidade_excecoes, janelas, portes_caminhao, materiais, imagens, configuracao restart identity cascade`,
     ),
     db.execute(sql`alter sequence protocolo_seq restart with 1`),
   ]);
