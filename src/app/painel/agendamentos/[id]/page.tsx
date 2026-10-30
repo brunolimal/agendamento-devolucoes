@@ -9,6 +9,7 @@ import { exigirSessao } from "@/lib/auth";
 import { getConfig } from "@/lib/config";
 import { formatarData, formatarDataHora, formatarDiaExtenso, formatarHora, hojeSP } from "@/lib/datas";
 import { classificarPrazo, ocupaVaga, podeEditar, podeFinalizar, podeReagendar, prazoDecisao } from "@/lib/regras";
+import { enviadaEm, TIPOS_MENSAGEM, tipoPermitido, tiposDisponiveis, type TipoMensagem } from "@/lib/templates";
 import { idSchema } from "@/lib/validacao";
 
 const VOLUME: Record<string, string> = { PEQUENO: "Pequeno", MEDIO: "Médio", GRANDE: "Grande", NAO_SEI: "Não informado" };
@@ -47,7 +48,13 @@ function descreverDetalhes(detalhes: unknown): string[] {
   return linhas;
 }
 
-export default async function DetalheAgendamento({ params }: { params: Promise<{ id: string }> }) {
+export default async function DetalheAgendamento({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ avisar?: string | string[] }>;
+}) {
   await exigirSessao();
   const { id } = await params;
   if (!idSchema.safeParse(id).success) notFound();
@@ -76,6 +83,19 @@ export default async function DetalheAgendamento({ params }: { params: Promise<{
     ...(ag.materiaisOutros ? [ag.materiaisOutros] : []),
   ].join(", ");
   const finalizar = podeFinalizar(ag.status, ag.data, hoje);
+
+  const botoesMensagem = tiposDisponiveis(
+    ag.status,
+    ag.requerAlinhamento,
+    eventos.some((e) => e.acao === "REAGENDADO"),
+  ).map((tipo) => ({ tipo, enviadaEm: enviadaEm(tipo, mensagens, eventos)?.toISOString() ?? null }));
+
+  // ?avisar=TIPO abre o painel "Avisar o cliente" (atalho da caixa de entrada e dos lembretes)
+  const pedido = (await searchParams).avisar;
+  const abrirAvisar =
+    typeof pedido === "string" && (TIPOS_MENSAGEM as readonly string[]).includes(pedido) && tipoPermitido(pedido as TipoMensagem, ag.status)
+      ? (pedido as TipoMensagem)
+      : undefined;
 
   const itens: [string, string][] = [
     ["Data", `${formatarDiaExtenso(ag.data)}, ${formatarData(ag.data)}`],
@@ -114,6 +134,8 @@ export default async function DetalheAgendamento({ params }: { params: Promise<{
       </header>
 
       <AcoesAgendamento
+        mensagens={botoesMensagem}
+        abrirAvisar={abrirAvisar}
         ag={{
           id: ag.id,
           data: ag.data,

@@ -244,7 +244,7 @@ export async function executarSeed() {
           agendamentoId: id,
           tipo: m.mensagem,
           texto: `[demonstração] mensagem de ${m.mensagem.toLowerCase()} para ${nome}`,
-          enviadoEm: criadoEm,
+          enviadoEm: instanteSP(somarDias(data < hoje ? data : hoje, -(2 + (i % 5))), "15:00"), // depois dos eventos do histórico
         }),
       );
     }

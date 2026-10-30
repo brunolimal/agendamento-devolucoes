@@ -43,24 +43,30 @@ export default async function CaixaDeEntrada() {
         <h2 className="text-lg font-semibold">Aguardando decisão ({solicitados.length})</h2>
         {solicitados.length === 0 && <p className="text-slate-500">Nenhuma solicitação pendente.</p>}
         {solicitados.map(({ ag, janela }) => (
-          <Link
-            key={ag.id}
-            href={`/painel/agendamentos/${ag.id}`}
-            className="block space-y-2 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200 hover:ring-primaria"
-          >
+          <div key={ag.id} className="space-y-2 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200 hover:ring-primaria">
+            <Link href={`/painel/agendamentos/${ag.id}`} className="block space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold">{ag.empresa}</span>
+                <span className="text-slate-500">· {ag.nome}</span>
+                <span className="ml-auto text-sm text-slate-500">{ag.protocolo}</span>
+              </div>
+              <div className="text-slate-700">
+                {formatarData(ag.data)}, {formatarHora(janela.horaInicio)} às {formatarHora(janela.horaFim)} · {ag.porteCodigo}
+              </div>
+            </Link>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-semibold">{ag.empresa}</span>
-              <span className="text-slate-500">· {ag.nome}</span>
-              <span className="ml-auto text-sm text-slate-500">{ag.protocolo}</span>
-            </div>
-            <div className="text-slate-700">
-              {formatarData(ag.data)}, {formatarHora(janela.horaInicio)} às {formatarHora(janela.horaFim)} · {ag.porteCodigo}
-            </div>
-            <div className="flex flex-wrap gap-2">
               <SeloPrazo situacao={classificarPrazo(ag.data, hoje, regras)} prazo={prazoDecisao(ag.data, regras)} />
               {ag.requerAlinhamento && <SeloAlinhar />}
+              {ag.requerAlinhamento && (
+                <Link
+                  href={`/painel/agendamentos/${ag.id}?avisar=ALINHAMENTO`}
+                  className="ml-auto rounded-lg border border-orange-300 px-3 py-1.5 text-sm font-semibold text-orange-900"
+                >
+                  Alinhar pelo WhatsApp
+                </Link>
+              )}
             </div>
-          </Link>
+          </div>
         ))}
       </section>
 

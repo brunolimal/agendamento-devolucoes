@@ -13,9 +13,11 @@ import {
   recusarAgendamento,
   type ResultadoAcao,
 } from "@/app/painel/actions/agendamentos";
-import { formatarHora } from "@/lib/datas";
+import { formatarDiaMesHora, formatarHora } from "@/lib/datas";
 import type { JanelaDisponivel } from "@/lib/disponibilidade";
 import { mascararEntrada } from "@/lib/telefone";
+import { ROTULO_TIPO, type TipoMensagem } from "@/lib/templates";
+import { AvisarCliente } from "./AvisarCliente";
 
 type Volume = "PEQUENO" | "MEDIO" | "GRANDE" | "NAO_SEI";
 const VOLUMES: { valor: Volume; rotulo: string }[] = [
@@ -54,8 +56,17 @@ export interface PermissoesAcoes {
   finalizarAguardando: boolean;
 }
 
+/** Botão do bloco "Mensagens": tipo e quando foi enviada no estado atual (RN-12). */
+export interface BotaoMensagem {
+  tipo: TipoMensagem;
+  enviadaEm: string | null;
+}
+
 interface Props {
   ag: DadosAgendamento;
+  mensagens: BotaoMensagem[];
+  /** Abre o painel "Avisar o cliente" ao carregar (?avisar=TIPO). */
+  abrirAvisar?: TipoMensagem;
   permissoes: PermissoesAcoes;
   hoje: string;
   portes: { codigo: string; nome: string; pesoVagas: number }[];
@@ -107,24 +118,27 @@ function Erro({ r }: { r: ResultadoAcao | null }) {
   );
 }
 
-export function AcoesAgendamento({ ag, permissoes, hoje, portes, materiais }: Props) {
+export function AcoesAgendamento({ ag, mensagens, abrirAvisar, permissoes, hoje, portes, materiais }: Props) {
   const router = useRouter();
   const [aberta, setAberta] = useState<Acao | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoAcao | null>(null);
+  const [avisar, setAvisar] = useState<TipoMensagem | null>(abrirAvisar ?? null);
 
   function abrir(a: Acao) {
     setResultado(null);
     setAberta(a);
   }
 
-  async function rodar(chamada: () => Promise<ResultadoAcao>) {
+  /** Roda a ação; se der certo e houver template (SPEC §10), abre o painel "Avisar o cliente". */
+  async function rodar(chamada: () => Promise<ResultadoAcao>, avisarDepois?: TipoMensagem) {
     setEnviando(true);
     setResultado(null);
     const r = await chamada();
     setEnviando(false);
     if (r.ok) {
       setAberta(null);
+      if (avisarDepois) setAvisar(avisarDepois);
       router.refresh();
     } else {
       setResultado(r);
@@ -172,6 +186,21 @@ export function AcoesAgendamento({ ag, permissoes, hoje, portes, materiais }: Pr
           </button>
         )}
       </div>
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold text-slate-600">Mensagens ao cliente</h3>
+        <div className="flex flex-wrap gap-2">
+          {mensagens.map((m) => (
+            <button key={m.tipo} type="button" className={`${btnNeutro} text-left`} onClick={() => setAvisar(m.tipo)}>
+              <span className="block">{ROTULO_TIPO[m.tipo]}</span>
+              {m.enviadaEm && (
+                <span className="block text-xs font-normal text-green-800">
+                  Enviada em {formatarDiaMesHora(new Date(m.enviadaEm))} · Reenviar
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
       {permissoes.finalizarAguardando && (
         <p className="text-sm text-slate-500">Concluir e &quot;Não compareceu&quot; ficam disponíveis a partir da data do agendamento.</p>
       )}
@@ -206,6 +235,16 @@ export function AcoesAgendamento({ ag, permissoes, hoje, portes, materiais }: Pr
           </div>
         </Modal>
       )}
+      {avisar && (
+        <AvisarCliente
+          id={ag.id}
+          tipo={avisar}
+          onFechar={() => {
+            setAvisar(null);
+            router.refresh();
+          }}
+        />
+      )}
     </>
   );
 }
@@ -214,7 +253,7 @@ interface ModalProps {
   enviando: boolean;
   resultado: ResultadoAcao | null;
   onFechar: () => void;
-  rodar: (chamada: () => Promise<ResultadoAcao>) => Promise<void>;
+  rodar: (chamada: () => Promise<ResultadoAcao>, avisarDepois?: TipoMensagem) => Promise<void>;
 }
 
 function ModalConfirmar({ ag, portes, enviando, resultado, onFechar, rodar }: ModalProps & { ag: DadosAgendamento; portes: Props["portes"] }) {
@@ -222,7 +261,7 @@ function ModalConfirmar({ ag, portes, enviando, resultado, onFechar, rodar }: Mo
   const [volume, setVolume] = useState<Volume | "">(ag.volume === "NAO_SEI" ? "" : ag.volume);
   const pronto = porteCodigo !== "" && volume !== "";
   const enviar = (forcar: boolean) =>
-    rodar(() => confirmarAgendamento({ id: ag.id, porteCodigo, volume, forcar }));
+    rodar(() => confirmarAgendamento({ id: ag.id, porteCodigo, volume, forcar }), "CONFIRMACAO");
 
   return (
     <Modal titulo="Confirmar agendamento" onFechar={onFechar}>
@@ -285,7 +324,12 @@ function ModalMotivo({ tipo, id, enviando, resultado, onFechar, rodar }: ModalPr
           type="button"
           className={btnPerigo}
           disabled={enviando || motivo.trim() === ""}
-          onClick={() => rodar(() => (recusar ? recusarAgendamento({ id, motivo }) : cancelarAgendamento({ id, motivo })))}
+          onClick={() =>
+            rodar(
+              () => (recusar ? recusarAgendamento({ id, motivo }) : cancelarAgendamento({ id, motivo })),
+              recusar ? "RECUSA" : "CANCELAMENTO_EMPRESA",
+            )
+          }
         >
           {enviando ? "Salvando..." : recusar ? "Recusar" : "Cancelar agendamento"}
         </button>
@@ -312,7 +356,7 @@ function ModalReagendar({ ag, hoje, enviando, resultado, onFechar, rodar }: Moda
 
   const janelas = lista?.data === data ? lista.janelas : null;
   const enviar = (forcar: boolean) => {
-    if (janelaId) return rodar(() => reagendarAgendamento({ id: ag.id, data, janelaId, forcar }));
+    if (janelaId) return rodar(() => reagendarAgendamento({ id: ag.id, data, janelaId, forcar }), "REAGENDAMENTO");
   };
 
   return (

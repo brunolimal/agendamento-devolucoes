@@ -1,6 +1,6 @@
 import type { statusAgendamento, volumeCarga } from "@/db/schema";
 import type { Regras } from "./config";
-import { somarDias } from "./datas";
+import { diaSemana, somarDias } from "./datas";
 
 export type Status = (typeof statusAgendamento.enumValues)[number];
 export type Volume = (typeof volumeCarga.enumValues)[number];
@@ -90,4 +90,21 @@ export function statusInicial(origem: "CLIENTE" | "PAINEL", confirmar = true): S
 /** RN-13: data-alvo dos lembretes. */
 export function dataDoLembrete(hoje: string, regras: Regras): string {
   return somarDias(hoje, regras.dias_lembrete);
+}
+
+/**
+ * RN-13 (ampliada): de `hoje + dias_lembrete` até o primeiro dia a partir dele com janela ativa.
+ * Na sexta, o alvo (sábado) não tem janela e o intervalo se estende até a segunda.
+ */
+export function intervaloDoLembrete(
+  hoje: string,
+  regras: Regras,
+  diasComJanela: ReadonlySet<number>,
+): { de: string; ate: string } {
+  const de = dataDoLembrete(hoje, regras);
+  let ate = de;
+  for (let i = 0; i < 7 && diasComJanela.size > 0 && !diasComJanela.has(diaSemana(ate)); i++) {
+    ate = somarDias(ate, 1);
+  }
+  return { de, ate };
 }

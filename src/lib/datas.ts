@@ -87,3 +87,8 @@ export function mesDe(data: string): string {
 export function formatarMes(mes: string): string {
   return format(paraSP(`${mes}-01`), "MMMM 'de' yyyy", { locale: ptBR });
 }
+
+/** dd/MM HH:mm (RN-12: "Enviada em 29/10 14:35"). */
+export function formatarDiaMesHora(valor: Date | string): string {
+  return format(paraSP(valor), "dd/MM HH:mm", { locale: ptBR });
+}
